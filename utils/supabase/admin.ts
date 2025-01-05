@@ -1,6 +1,7 @@
 import { toDateTime } from '@/utils/helpers';
 import { stripe } from '@/utils/stripe/config';
 import { createClient } from '@supabase/supabase-js';
+
 import Stripe from 'stripe';
 import type { Database, Tables, TablesInsert } from 'types_db';
 
@@ -93,12 +94,19 @@ const deletePriceRecord = async (price: Stripe.Price) => {
 };
 
 const upsertCustomerToSupabase = async (uuid: string, customerId: string) => {
+  console.log('Upserting customer:', { uuid, customerId });
+  
   const { error: upsertError } = await supabaseAdmin
     .from('customers')
-    .upsert([{ id: uuid, stripe_customer_id: customerId }]);
-
-  if (upsertError)
+    .upsert([{ 
+      id: uuid, 
+      stripe_customer_id: customerId 
+    }]);
+    console.log('upsertError', upsertError,211222);
+  if (upsertError) {
+    console.error('Upsert error:', upsertError);
     throw new Error(`Supabase customer record creation failed: ${upsertError.message}`);
+  }
 
   return customerId;
 };
@@ -118,6 +126,8 @@ const createOrRetrieveCustomer = async ({
   email: string;
   uuid: string;
 }) => {
+  console.log('Creating/retrieving customer:', { email, uuid });
+  
   // Check if the customer already exists in Supabase
   const { data: existingSupabaseCustomer, error: queryError } =
     await supabaseAdmin
@@ -127,9 +137,10 @@ const createOrRetrieveCustomer = async ({
       .maybeSingle();
 
   if (queryError) {
+    console.error('Query error:', queryError);
     throw new Error(`Supabase customer lookup failed: ${queryError.message}`);
   }
-
+  console.log('existingSupabaseCustomer', existingSupabaseCustomer,1222);
   // Retrieve the Stripe customer ID using the Supabase customer ID, with email fallback
   let stripeCustomerId: string | undefined;
   if (existingSupabaseCustomer?.stripe_customer_id) {
@@ -140,6 +151,7 @@ const createOrRetrieveCustomer = async ({
   } else {
     // If Stripe ID is missing from Supabase, try to retrieve Stripe customer ID by email
     const stripeCustomers = await stripe.customers.list({ email: email });
+    console.log('stripeCustomers', stripeCustomers,11222);
     stripeCustomerId =
       stripeCustomers.data.length > 0 ? stripeCustomers.data[0].id : undefined;
   }
@@ -172,12 +184,13 @@ const createOrRetrieveCustomer = async ({
     console.warn(
       `Supabase customer record was missing. A new record was created.`
     );
-
+    console.log('stripeIdToInsert', stripeIdToInsert,11222);
     // If Supabase has no record, create a new record and return Stripe customer ID
     const upsertedStripeCustomer = await upsertCustomerToSupabase(
       uuid,
       stripeIdToInsert
     );
+    console.log('upsertedStripeCustomer', upsertedStripeCustomer,11222);
     if (!upsertedStripeCustomer)
       throw new Error('Supabase customer record creation failed.');
 
@@ -281,6 +294,74 @@ const manageSubscriptionStatusChange = async (
       subscription.default_payment_method as Stripe.PaymentMethod
     );
 };
+
+export const SUBSCRIPTION_LIMITS = {
+  'free': 10,
+  'premium': 100,
+} as const;
+
+export async function getSupabaseUserIdFromStripeCustomerId(stripeCustomerId: string): Promise<string> {
+  const { data: customerData, error: customerError } = await supabaseAdmin
+    .from('customers')
+    .select('id')
+    .eq('stripe_customer_id', stripeCustomerId)
+    .single();
+
+  if (customerError) {
+    throw new Error(`Error getting user ID from Stripe customer ID: ${customerError.message}`);
+  }
+
+  return customerData.id;
+}
+
+export async function updateUserUsageLimit(
+  userId: string, 
+  subscriptionTier: keyof typeof SUBSCRIPTION_LIMITS
+) {
+  const resetDate = new Date();
+  resetDate.setMonth(resetDate.getMonth() + 1);
+  
+  // @ts-ignore - Supabase types are not up to date with the usage_limits table
+  const { error } = await supabaseAdmin
+    .from('usage_limits')
+    .upsert({
+      user_id: userId,
+      subscription_tier: subscriptionTier,
+      total_limit: SUBSCRIPTION_LIMITS[subscriptionTier],
+      used_count: 0,
+      reset_date: resetDate.toISOString()
+    }, {
+      onConflict: 'user_id',
+      ignoreDuplicates: false
+    });
+
+  if (error) {
+    console.error('Error updating usage limits:', error);
+    throw error;
+  }
+}
+
+export async function checkAndUpdateUsageLimit(userId: string) {
+  // @ts-ignore - Supabase types are not up to date with the usage_limits table
+  const { data: usageLimit, error } = await supabaseAdmin
+    .from('usage_limits')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+    
+  if (error) {
+    console.error('Error checking usage limit:', error);
+    throw error;
+  }
+
+  // @ts-ignore - Supabase types are not up to date with the usage_limits table
+  await supabaseAdmin
+    .from('usage_limits')
+    .update({
+      used_count: usageLimit.used_count + 1
+    })
+    .eq('user_id', userId);
+}
 
 export {
   upsertProductRecord,

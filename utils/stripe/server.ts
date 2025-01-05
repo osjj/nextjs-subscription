@@ -29,7 +29,7 @@ export async function checkoutWithStripe(
       error,
       data: { user }
     } = await supabase.auth.getUser();
-
+    console.log('user', user,222);
     if (error || !user) {
       console.error(error);
       throw new Error('Could not get user session.');

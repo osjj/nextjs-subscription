@@ -16,3 +16,12 @@ export const stripe = new Stripe(
     }
   }
 );
+
+const PRICE_ID_TO_TIER = {
+  'price_1Qc7j6IKDyoXLJh0ZzJVH2nI': 'premium',
+  // 添加你的实际价格 ID
+} as const;
+
+export function getPriceIdTier(priceId: string): 'free' | 'basic' | 'premium' {
+  return PRICE_ID_TO_TIER[priceId as keyof typeof PRICE_ID_TO_TIER] || 'free';
+}

@@ -1,12 +1,15 @@
 import Stripe from 'stripe';
-import { stripe } from '@/utils/stripe/config';
+import { stripe, getPriceIdTier } from '@/utils/stripe/config';
 import {
   upsertProductRecord,
   upsertPriceRecord,
   manageSubscriptionStatusChange,
   deleteProductRecord,
-  deletePriceRecord
+  deletePriceRecord,
+  updateUserUsageLimit,
+  getSupabaseUserIdFromStripeCustomerId,
 } from '@/utils/supabase/admin';
+import { createClient } from '@/utils/supabase/client';
 
 const relevantEvents = new Set([
   'product.created',
@@ -56,13 +59,30 @@ export async function POST(req: Request) {
           break;
         case 'customer.subscription.created':
         case 'customer.subscription.updated':
-        case 'customer.subscription.deleted':
           const subscription = event.data.object as Stripe.Subscription;
           await manageSubscriptionStatusChange(
             subscription.id,
             subscription.customer as string,
             event.type === 'customer.subscription.created'
           );
+          
+          const priceId = subscription.items.data[0].price.id;
+          const tier = getPriceIdTier(priceId);
+          
+          const userId = await getSupabaseUserIdFromStripeCustomerId(subscription.customer as string);
+          // @ts-ignore - tier type is compatible with SUBSCRIPTION_LIMITS
+          await updateUserUsageLimit(userId, tier);
+          break;
+        case 'customer.subscription.deleted':
+          const deletedSubscription = event.data.object as Stripe.Subscription;
+          await manageSubscriptionStatusChange(
+            deletedSubscription.id,
+            deletedSubscription.customer as string,
+            false
+          );
+          
+          const deletedUserId = await getSupabaseUserIdFromStripeCustomerId(deletedSubscription.customer as string);
+          await updateUserUsageLimit(deletedUserId, 'free');
           break;
         case 'checkout.session.completed':
           const checkoutSession = event.data.object as Stripe.Checkout.Session;
