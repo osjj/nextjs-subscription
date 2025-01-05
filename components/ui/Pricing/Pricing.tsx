@@ -47,6 +47,7 @@ export default function Pricing({ user, products, subscription }: Props) {
   const currentPath = usePathname();
 
   const handleStripeCheckout = async (price: Price) => {
+    console.log('price', price);
     setPriceIdLoading(price.id);
 
     if (!user) {

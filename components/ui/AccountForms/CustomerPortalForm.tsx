@@ -25,6 +25,7 @@ interface Props {
 }
 
 export default function CustomerPortalForm({ subscription }: Props) {
+  console.log('subscription', subscription);
   const router = useRouter();
   const currentPath = usePathname();
   const [isSubmitting, setIsSubmitting] = useState(false);
