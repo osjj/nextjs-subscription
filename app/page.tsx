@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { createClient as supabase } from '@/utils/supabase/client';
+import { createClient } from '@/utils/supabase/client';
 import { message } from 'antd';
 
 interface AnalysisResponse {
@@ -15,20 +15,63 @@ interface UploadedImage {
   url: string;
 }
 
+interface UsageData {
+  prompt_count: number;
+  max_prompts: number;
+  subscription_tier: string;
+}
+
+const supabase = createClient();
 const HeroSection = () => {
   const [messageApi, contextHolder] = message.useMessage();
   const [selectedFiles, setSelectedFiles] = useState<File[]>(() => []);
   const [promptCount, setPromptCount] = useState<number>(() => 0);
+  const [maxPrompts, setMaxPrompts] = useState<number>(() => 50);
   const [isLoading, setIsLoading] = useState<boolean>(() => false);
   const [analysisResult, setAnalysisResult] = useState<string>(() => '');
   const [error, setError] = useState<string>(() => '');
   const [isMounted, setIsMounted] = useState(false);
   const [streamingContent, setStreamingContent] = useState<string>('');
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [subscriptionTier, setSubscriptionTier] = useState<string>(() => 'free');
   const resultContainerRef = useRef<HTMLDivElement>(null);
+
+  // 获取使用量数据
+  const fetchUsageData = async () => {
+    try {
+      const response = await fetch('/api/usage');
+      if (!response.ok) {
+        throw new Error('获取使用量数据失败');
+      }
+      const data: UsageData = await response.json();
+      setPromptCount(data.prompt_count);
+      setMaxPrompts(data.max_prompts);
+      setSubscriptionTier(data.subscription_tier);
+    } catch (error) {
+      console.error('获取使用量数据失败:', error);
+      messageApi.error('获取使用量数据失败');
+    }
+  };
+
+  // 更新使用量
+  const updateUsage = async () => {
+    try {
+      const response = await fetch('/api/usage', {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error('更新使用量失败');
+      }
+      await fetchUsageData(); // 重新获取最新数据
+    } catch (error) {
+      console.error('更新使用量失败:', error);
+      messageApi.error('更新使用量失败');
+    }
+  };
 
   useEffect(() => {
     setIsMounted(true);
+    fetchUsageData(); // 初始加载时获取使用量数据
   }, []);
 
   // 添加自动滚动效果
@@ -91,7 +134,7 @@ const HeroSection = () => {
   // 上传图片到 Supabase Storage
   const uploadToSupabase = async (file: File): Promise<UploadedImage> => {
     try {
-  
+      
       // 检查用户是否已登录
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -106,7 +149,7 @@ const HeroSection = () => {
 
       // 上传文件
       const { error: uploadError, data } = await supabase.storage
-        .from('bunny')
+        .from('uploadImg')
         .upload(filePath, file, {
           cacheControl: '3600',
           upsert: false
@@ -121,7 +164,7 @@ const HeroSection = () => {
 
       // 获取公共 URL
       const { data: { publicUrl } } = supabase.storage
-        .from('bunny')
+        .from('uploadImg')
         .getPublicUrl(filePath);
 
       return {
@@ -191,7 +234,7 @@ const HeroSection = () => {
       const imageToRemove = uploadedImages[index];
       if (imageToRemove) {
         const { error } = await supabase.storage
-          .from('bunny')
+          .from('uploadImg')
           .remove([imageToRemove.path]);
 
         if (error) throw error;
@@ -216,14 +259,19 @@ const HeroSection = () => {
       return;
     }
 
+    if (promptCount >= maxPrompts) {
+      setError('您已达到本月提示次数上限');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
-    setStreamingContent('');  // 清空之前的内容
-    
+    setStreamingContent('');
+
     try {
       // 添加图片大小和格式检查
       for (const file of selectedFiles) {
-        if (file.size > 10 * 1024 * 1024) { // 10MB 限制
+        if (file.size > 10 * 1024 * 1024) {
           throw new Error(`文件 ${file.name} 太大，请选择小于 10MB 的图片`);
         }
         if (!file.type.startsWith('image/')) {
@@ -264,8 +312,10 @@ const HeroSection = () => {
       const reader = response.body.getReader();
       await readStream(reader);
       
+      // 分析成功后更新使用量
+      await updateUsage();
+      
       setSelectedFiles([]);
-      setPromptCount(prev => prev + 1);
       
     } catch (err) {
       console.error('分析过程出错:', err);
@@ -415,7 +465,7 @@ const HeroSection = () => {
               )}
 
               <p className="text-center text-gray-500 text-sm">
-                Prompts generated: {promptCount} / 50
+                提示次数: {promptCount} / {maxPrompts} ({subscriptionTier} 套餐)
               </p>
             </div>
           </div>
