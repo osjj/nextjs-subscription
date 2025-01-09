@@ -26,7 +26,7 @@ const HeroSection = () => {
   const [messageApi, contextHolder] = message.useMessage();
   const [selectedFiles, setSelectedFiles] = useState<File[]>(() => []);
   const [promptCount, setPromptCount] = useState<number>(() => 0);
-  const [maxPrompts, setMaxPrompts] = useState<number>(() => 50);
+  const [maxPrompts, setMaxPrompts] = useState<number>(() => 10);
   const [isLoading, setIsLoading] = useState<boolean>(() => false);
   const [analysisResult, setAnalysisResult] = useState<string>(() => '');
   const [error, setError] = useState<string>(() => '');
