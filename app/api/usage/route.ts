@@ -1,14 +1,16 @@
 import { cookies } from 'next/headers'
 import { Database } from '@/types/supabase'
 import { createClient } from '@/utils/supabase/server'
-
+// import { supabase } from '@/utils/supabase'
 export async function GET(req: Request) {
-  const cookieStore = cookies()
-  const supabase = createClient()
-
+    
+   const supabase = createClient()
+  const aa = await supabase.auth.getSession();
+  console.log(aa,11333)
   const { data: { user }, error: authError } = await supabase.auth.getUser()
-  
+  console.log(user,2211)
   if (authError || !user) {
+    console.log(authError,22)
     return new Response('Unauthorized', { status: 401 })
   }
 
@@ -18,7 +20,7 @@ export async function GET(req: Request) {
     .select('total_limit, used_count, subscription_tier')
     .eq('user_id', user.id)
     .single()
-    
+    console.log(user.id,22)
   // 如果没有找到记录，创建一条新记录
   if (error?.code === 'PGRST116') {
     const { data: newData, error: insertError } = await supabase
@@ -54,7 +56,6 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const cookieStore = cookies()
   const supabase = createClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -101,7 +102,7 @@ export async function POST(req: Request) {
   const { error: updateError } = await supabase
     .from('usage_limits')
     .update({ 
-      used_count: (currentData.used_count || 0) + 1 
+      used_count: (currentData?.used_count || 0) + 1 
     })
     .eq('user_id', user.id)
 

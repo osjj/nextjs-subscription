@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { createClient } from '@/utils/supabase/client';
+import {createClient} from '@/utils/supabase/client';
 import { message } from 'antd';
+import { Session } from '@supabase/supabase-js';
+import { useAuthModal } from '@/components/AuthModalProvider';
 
 interface AnalysisResponse {
   message: string;
@@ -21,8 +23,10 @@ interface UsageData {
   subscription_tier: string;
 }
 
-const supabase = createClient();
+
 const HeroSection = () => {
+  const { openAuthModal } = useAuthModal();
+  const supabase = createClient();
   const [messageApi, contextHolder] = message.useMessage();
   const [selectedFiles, setSelectedFiles] = useState<File[]>(() => []);
   const [promptCount, setPromptCount] = useState<number>(() => 0);
@@ -35,21 +39,38 @@ const HeroSection = () => {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [subscriptionTier, setSubscriptionTier] = useState<string>(() => 'free');
   const resultContainerRef = useRef<HTMLDivElement>(null);
+  const [userSession, setUserSession] = useState<Session | null>(null);
 
   // 获取使用量数据
   const fetchUsageData = async () => {
+    
     try {
-      const response = await fetch('/api/usage');
-      if (!response.ok) {
-        throw new Error('获取使用量数据失败');
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log(session,22)
+      setUserSession(session);
+      // 只有在用户登录时才获取使用量
+      if (session) {
+       
+        const response = await fetch('/api/usage');
+        console.log(response,22)
+        if (!response.ok) {
+          throw new Error('获取使用量数据失败');
+        }
+        const data: UsageData = await response.json();
+        setPromptCount(data.prompt_count);
+        setMaxPrompts(data.max_prompts);
+        setSubscriptionTier(data.subscription_tier);
+      } else {
+        // 未登录时重置使用量数据
+        setPromptCount(0);
+        setMaxPrompts(10);
+        setSubscriptionTier('free');
       }
-      const data: UsageData = await response.json();
-      setPromptCount(data.prompt_count);
-      setMaxPrompts(data.max_prompts);
-      setSubscriptionTier(data.subscription_tier);
     } catch (error) {
+      
       console.error('获取使用量数据失败:', error);
       messageApi.error('获取使用量数据失败');
+      debugger
     }
   };
 
@@ -71,7 +92,21 @@ const HeroSection = () => {
 
   useEffect(() => {
     setIsMounted(true);
-    fetchUsageData(); // 初始加载时获取使用量数据
+    // 监听认证状态变化
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUserSession(session);
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        fetchUsageData();
+      }
+    });
+
+    // 初始加载时获取使用量数据
+   fetchUsageData();
+
+    // 清理订阅
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // 添加自动滚动效果
@@ -249,7 +284,7 @@ const HeroSection = () => {
     } catch (error) {
       console.error('删除文件失败:', error);
       messageApi.error('图片删除失败');
-    }
+    }   
   };
 
   // 修改分析处理函数
@@ -324,7 +359,14 @@ const HeroSection = () => {
       setIsLoading(false);
     }
   };
-
+  const handleClick = () => {
+    console.log('Button clicked');
+    if(userSession){
+      console.log('用户已登录');
+    }else{
+      openAuthModal();
+    }
+  };
   return (
     <>
       {contextHolder}
@@ -370,6 +412,7 @@ const HeroSection = () => {
             <div 
               className="border-2 border-dashed border-gray-600 rounded-xl p-8 mb-6 text-center"
               onDrop={handleDrop}
+              onClick={handleClick}
               onDragOver={(e) => e.preventDefault()}
             >
               <p className="text-gray-300 mb-4">
@@ -383,6 +426,7 @@ const HeroSection = () => {
                   accept="image/*"
                   onChange={handleFileChange}
                   multiple
+                  disabled={!userSession}
                 />
                 <span className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
                   Choose images
@@ -464,13 +508,17 @@ const HeroSection = () => {
                 </div>
               )}
 
-              <p className="text-center text-gray-500 text-sm">
-                提示次数: {promptCount} / {maxPrompts} ({subscriptionTier} 套餐)
-              </p>
+              {/* 只在用户登录时显示使用量信息 */}
+              {userSession && (
+                <p className="text-center text-gray-500 text-sm">
+                  提示次数: {promptCount} / {maxPrompts} ({subscriptionTier} 套餐)
+                </p>
+              )}
             </div>
           </div>
         </div>
       </section>
+     
     </>
   );
 };

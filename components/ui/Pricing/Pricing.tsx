@@ -9,7 +9,9 @@ import { getErrorRedirect } from '@/utils/helpers';
 import { User } from '@supabase/supabase-js';
 import cn from 'classnames';
 import { useRouter, usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuthModal } from '@/components/AuthModalProvider';
+import { checkAndUpdateUsageLimit } from '@/utils/supabase/admin';
 
 type Subscription = Tables<'subscriptions'>;
 type Product = Tables<'products'>;
@@ -45,6 +47,22 @@ export default function Pricing({ user, products, subscription }: Props) {
     useState<BillingInterval>('month');
   const [priceIdLoading, setPriceIdLoading] = useState<string>();
   const currentPath = usePathname();
+  const { openAuthModal } = useAuthModal();
+  const [usageData, setUsageData] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchUsageData = async () => {
+      if (user) {
+        try {
+          const usage = await checkAndUpdateUsageLimit(user.id);
+          setUsageData(usage);
+        } catch (error) {
+          console.error('Failed to fetch usage data:', error);
+        }
+      }
+    };
+    fetchUsageData();
+  }, [user]);
 
   const handleStripeCheckout = async (price: Price) => {
     console.log('price', price);
@@ -52,7 +70,8 @@ export default function Pricing({ user, products, subscription }: Props) {
 
     if (!user) {
       setPriceIdLoading(undefined);
-      return router.push('/signin/signup');
+      openAuthModal();
+      return;
     }
     console.log('price', price,currentPath,222);
     const { errorRedirect, sessionId } = await checkoutWithStripe(
@@ -198,6 +217,11 @@ export default function Pricing({ user, products, subscription }: Props) {
             })}
           </div>
           <LogoCloud />
+          {usageData !== null && (
+            <div className="mt-4 text-center text-white">
+              <p>当前使用量: {usageData}</p>
+            </div>
+          )}
         </div>
       </section>
     );
