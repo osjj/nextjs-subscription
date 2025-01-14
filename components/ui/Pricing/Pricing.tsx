@@ -51,12 +51,13 @@ export default function Pricing({ user, products, subscription }: Props) {
   const [usageData, setUsageData] = useState<number | null>(null);
 
   useEffect(() => {
+    console.log(user,111)
     const fetchUsageData = async () => {
       if (user) {
         try {
           const usage = await checkAndUpdateUsageLimit(user.id);
           console.log('usage', usage,222);
-          debugger;
+          
           setUsageData(usage);
         } catch (error) {
           console.error('Failed to fetch usage data:', error);

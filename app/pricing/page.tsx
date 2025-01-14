@@ -7,13 +7,15 @@ import {
 } from '@/utils/supabase/queries';
 
 export default async function PricingPage() {
-  const supabase = createClient();
+  //const supabase = createClient();
   const [user, products, subscription] = await Promise.all([
-    getUser(supabase),
-    getProducts(supabase),
-    getSubscription(supabase)
+    getUser(),
+    getProducts(),
+    getSubscription()
   ]);
-  
+  console.log(user,222)
+  console.log(products,333333)
+  console.log(subscription,55555555555555)
   return (
     <Pricing
       user={user}
